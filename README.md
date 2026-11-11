@@ -9,12 +9,14 @@
 python -m venv .venv
 .venv\Scripts\activate          # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-python run.py                   # 창에서 직접 운전
-python run.py --headless --seconds 120   # 자동 주행 → out/result.png
+python run.py                   # 직접 운전 (센서 데이터가 실시간으로 my_slam.py 에 들어감)
+python run.py --headless --seconds 60    # 자동 주행 → out/run.png
 python -m pytest -q
 ```
 
-조작: 방향키 운전, 스페이스 브레이크, `A` 자동 주행, `M` 지도 전환(오도메트리 위치/실제 위치), `R` 처음부터.
+`run.py` 화면: 실제 세계(운전하는 곳) | 라이다 원시값(로봇 기준) | my_slam.py 가 만든 지도와 오차.
+조작: 창을 한 번 클릭한 뒤 방향키 운전, 스페이스 브레이크, `A` 자동 주행, `R` 처음부터,
+`L` 지금까지의 센서 로그 저장(`data/drive_*.npz`, `python play.py data/drive_....npz` 로 다시 재생).
 
 ## 내 SLAM 돌려 보기 (센서 데이터 재생)
 

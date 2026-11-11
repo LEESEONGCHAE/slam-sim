@@ -133,49 +133,86 @@ def load_carmen(path, name=None, invalid_from=80.0):
 
 
 # ---------------------------------------------------------------- 시뮬레이터
-def record_sim(seconds=180.0, seed=0, odom_hz=50.0, realistic=True):
-    """시뮬레이터를 자동 주행으로 돌려 센서 로그를 만든다.
+class SimRig:
+    """시뮬레이터 차량에 센서를 단 것. 운전 입력을 넣으면 센서 메시지가 나온다.
 
     realistic=True 이면 실제 라이다에서 흔한 현상을 넣는다:
       - 빔 2%: 반사 없음(valid=False)
       - 빔 0.5%: 엉뚱한 짧은 값(먼지·반사 노이즈)
       - 모션 왜곡: 한 바퀴(0.1 s) 도는 동안 차가 움직여서 빔마다 쏜 위치가 다르다
     """
-    from .sim import Sim
 
-    sim = Sim(seed=seed)
-    lid = sim.lidar
-    rng = sim.rng
-    msgs, truth = [], []
-    odom_every = max(1, int(round(1.0 / odom_hz / sim.DT)))
-    scan_every = int(round(sim.SCAN_PERIOD / sim.DT))
-    scan_start_pose = sim.vehicle.pose
-    n = int(round(seconds / sim.DT))
-    for k in range(1, n + 1):
-        s, a = sim.autopilot.control(sim.vehicle)
-        sim.vehicle.step(s, a, sim.DT)
-        v, w = sim.odom.measure(sim.vehicle)
-        sim.odom.update(v, w, sim.DT)
-        sim.t += sim.DT
-        if k % odom_every == 0:
-            msgs.append(OdomMsg(sim.t, *sim.odom.pose, v, w))
-            truth.append((sim.t, *sim.vehicle.pose))
-        if k % scan_every == 0:
-            end = sim.vehicle.pose
-            start = scan_start_pose if realistic else end
-            r, hit = lid.scan(sim.world, end, noisy=True, pose_start=start)
-            valid = hit.copy()
-            if realistic:
-                drop = rng.random(r.shape) < 0.02
-                valid &= ~drop
-                spur = rng.random(r.shape) < 0.005
-                r = np.where(spur, rng.uniform(0.2, r), r)
-                valid |= spur
-            r = np.where(valid, r, lid.max_range)
-            msgs.append(ScanMsg(sim.t, r, valid, sim.odom.pose))
-            truth.append((sim.t, *end))
-            scan_start_pose = end
-    b = sim.world.bounds
-    return SensorLog(f"sim(seed={seed})", lid.angles.copy(), lid.max_range, msgs, np.array(truth),
-                     (b[0] - 2, b[1] - 2, b[2] + 2, b[3] + 2),
-                     {"source": "simulator", "realistic": realistic})
+    def __init__(self, seed=0, odom_hz=50.0, realistic=True):
+        from .sim import Sim
+        self.sim = Sim(seed=seed)
+        self.seed, self.odom_hz, self.realistic = seed, odom_hz, realistic
+        self.odom_every = max(1, int(round(1.0 / odom_hz / self.sim.DT)))
+        self.scan_every = int(round(self.sim.SCAN_PERIOD / self.sim.DT))
+        self.reset()
+
+    def reset(self):
+        self.sim.reset()
+        self.k = 0
+        self.messages, self.truth = [], []
+        self.scan_truth = {}      # 스캔 시각 → 정답 위치 (평가용)
+        self._scan_start = self.sim.vehicle.pose
+
+    @property
+    def vehicle(self):
+        return self.sim.vehicle
+
+    def step(self, steer, accel, duration, auto=False):
+        """duration 초만큼 진행하고, 그동안 나온 새 메시지 목록을 돌려준다."""
+        sim, lid, rng = self.sim, self.sim.lidar, self.sim.rng
+        new = []
+        for _ in range(max(1, int(round(duration / sim.DT)))):
+            self.k += 1
+            if auto and self.k % 10 == 1:
+                steer, accel = sim.autopilot.control(sim.vehicle)
+            sim.vehicle.step(steer, accel, sim.DT)
+            v, w = sim.odom.measure(sim.vehicle)
+            sim.odom.update(v, w, sim.DT)
+            sim.t += sim.DT
+            if self.k % self.odom_every == 0:
+                new.append(OdomMsg(sim.t, *sim.odom.pose, v, w))
+                self.truth.append((sim.t, *sim.vehicle.pose))
+            if self.k % self.scan_every == 0:
+                end = sim.vehicle.pose
+                start = self._scan_start if self.realistic else end
+                r, hit = lid.scan(sim.world, end, noisy=True, pose_start=start)
+                valid = hit.copy()
+                if self.realistic:
+                    valid &= ~(rng.random(r.shape) < 0.02)
+                    spur = rng.random(r.shape) < 0.005
+                    r = np.where(spur, rng.uniform(0.2, r), r)
+                    valid |= spur
+                r = np.where(valid, r, lid.max_range)
+                new.append(ScanMsg(sim.t, r, valid, sim.odom.pose))
+                self.truth.append((sim.t, *end))
+                self.scan_truth[sim.t] = end
+                self._scan_start = end
+        self.messages += new
+        return new
+
+    def truth_pose(self):
+        return self.sim.vehicle.pose
+
+    def info(self):
+        b = self.sim.world.bounds
+        return {"name": f"sim(seed={self.seed})", "angles": self.sim.lidar.angles.copy(),
+                "max_range": self.sim.lidar.max_range, "bounds": (b[0] - 2, b[1] - 2, b[2] + 2, b[3] + 2)}
+
+    def to_log(self, name=None):
+        b = self.sim.world.bounds
+        return SensorLog(name or f"sim(seed={self.seed})", self.sim.lidar.angles.copy(),
+                         self.sim.lidar.max_range, list(self.messages),
+                         np.array(self.truth) if self.truth else None,
+                         (b[0] - 2, b[1] - 2, b[2] + 2, b[3] + 2),
+                         {"source": "simulator", "realistic": self.realistic})
+
+
+def record_sim(seconds=180.0, seed=0, odom_hz=50.0, realistic=True):
+    """시뮬레이터를 자동 주행으로 돌려 센서 로그를 만든다."""
+    rig = SimRig(seed, odom_hz, realistic)
+    rig.step(0, 0, seconds, auto=True)
+    return rig.to_log()
