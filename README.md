@@ -16,7 +16,32 @@ python -m pytest -q
 
 조작: 방향키 운전, 스페이스 브레이크, `A` 자동 주행, `M` 지도 전환(오도메트리 위치/실제 위치), `R` 처음부터.
 
-## 지금 되는 것 (1단계)
+## 내 SLAM 돌려 보기 (센서 데이터 재생)
+
+하드웨어 없이 SLAM을 직접 구현해 보는 곳. `play.py`가 센서 메시지를 시간순으로 [my_slam.py](my_slam.py)에 넣어 준다.
+지금 `my_slam.py`는 오도메트리를 그대로 믿는 기준선이고, `on_scan`의 TODO 자리에 스캔 매칭 등을 넣으면 된다.
+
+```bash
+python get_data.py              # 실제 데이터 받기 (Intel Research Lab, 16 MB, data/에 저장)
+python play.py intel            # 실제 2D 라이다 + 오도메트리 재생
+python play.py sim              # 시뮬레이터 로그 (정답 위치가 있어 오차 RMSE를 보여 줌)
+python play.py intel --headless # 끝까지 돌리고 out/play_intel.png 저장
+```
+
+재생 중: 스페이스 일시정지, `+`/`-` 배속.
+
+| 데이터 | 라이다 | 오도메트리 | 정답 위치 |
+| --- | --- | --- | --- |
+| `intel` (실제, 약 45분) | 180빔, 정면 기준 −90°~+89° 1° 간격, 반사 없음 = 80 m 이상 | 로봇이 적분한 (x, y, θ) | 없음 (지도 모양으로 판단) |
+| `sim` (240초) | 181빔, 270°, 노이즈 3 cm, 빔 2% 누락, 0.5% 엉뚱한 값, 모션 왜곡 | 휠 속도 스케일 오차 + 자이로 바이어스 | 있음 |
+
+메시지 형식은 [slamsim/logs.py](slamsim/logs.py), 자세 계산 도우미(compose/relative 등)는 [slamsim/geometry.py](slamsim/geometry.py).
+Intel 빔 각도(−90°~+89°)는 CARMEN 관례를 따른 가정이고 원 문서로 확인하지 않았다.
+
+데이터 출처: Intel Research Lab (Seattle) 데이터셋, 프라이부르크 대학 SLAM 평가 페이지
+(http://ais.informatik.uni-freiburg.de/slamevaluation/datasets.php). 저장소에는 넣지 않는다.
+
+## 시뮬레이터 구성 (1단계)
 
 - 차량: 저속은 기구학 자전거 모델, 고속은 동적 자전거 모델(선형 타이어 + 마찰 한계 → 미끄러짐)
 - 센서: 휠 속도(스케일 오차) + 자이로(바이어스) 추측 항법, 270° 2D 라이다(레이캐스트 + 가우시안 노이즈)

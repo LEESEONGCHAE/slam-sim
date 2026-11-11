@@ -52,7 +52,12 @@ def main():
                      cmap="gray_r", vmin=0, vmax=1)
     axm.set_aspect("equal")
     car_map, = axm.plot([], [], "r-", lw=1.5)
-    info = fig.text(0.01, 0.01, "", family="monospace", fontsize=9)
+    axm.set_title("map  [M: odometry pose / true pose]")
+    box = dict(facecolor="white", alpha=0.8, edgecolor="none")
+    info = axw.text(0.01, 0.01, "", transform=axw.transAxes, family="monospace", fontsize=8, bbox=box)
+    map_label = axm.text(0.01, 0.97, "", transform=axm.transAxes, va="top", fontsize=9,
+                         color="tab:red", bbox=box)
+    artists = (img, ln_true, ln_odom, car_true, car_odom, pts, car_map, info, map_label)
 
     def on_press(e):
         if e.key is None:
@@ -93,11 +98,11 @@ def main():
         grid, pose = (sim.grid_odom, sim.odom.pose) if state["map"] == "odom" else (sim.grid_true, v.pose)
         img.set_data(grid.prob())
         car_map.set_data(*zip(*v.outline(pose)))
-        axm.set_title(f"map built with {'ODOMETRY' if state['map'] == 'odom' else 'TRUE'} pose  [M]")
+        map_label.set_text(f"built with {'ODOMETRY' if state['map'] == 'odom' else 'TRUE'} pose")
         err, dth = sim.odom_error
         info.set_text(
-            f"t={sim.t:6.1f}s  v={v.vx*3.6:5.1f}km/h  steer={math.degrees(v.steer):5.1f}deg  "
-            f"slip={math.degrees(v.slip_angle):5.1f}deg  yawrate={math.degrees(v.r):6.1f}deg/s  "
+            f"t={sim.t:6.1f}s  v={v.vx*3.6:5.1f}km/h  steer={math.degrees(v.steer):5.1f}deg\n"
+            f"slip={math.degrees(v.slip_angle):5.1f}deg  yawrate={math.degrees(v.r):6.1f}deg/s\n"
             f"odom err={err:5.2f}m {dth:5.1f}deg  auto={'ON' if state['auto'] else 'off'} [A]")
 
     if args.headless:
@@ -109,17 +114,24 @@ def main():
         print(f"t={sim.t:.1f}s  odom err={err:.2f}m {dth:.1f}deg  -> out/result.png")
         return
 
+    import time
     from matplotlib.animation import FuncAnimation
-    FRAME = 0.04
+    last = [time.perf_counter()]
 
     def tick(_):
+        # 그리기가 늦어도 실제 흐른 시간만큼 진행 (최대 0.1 s)
+        now = time.perf_counter()
+        dt = min(0.1, now - last[0])
+        last[0] = now
         s, a = controls()
-        sim.step(s, a, FRAME, auto=state["auto"])
+        sim.step(s, a, dt, auto=state["auto"])
         draw()
-        return ()
+        return artists
 
-    anim = FuncAnimation(fig, tick, interval=int(FRAME * 1000), cache_frame_data=False)
-    plt.tight_layout(rect=(0, 0.03, 1, 1))
+    for a in artists:
+        a.set_animated(True)
+    plt.tight_layout()
+    anim = FuncAnimation(fig, tick, interval=30, blit=True, cache_frame_data=False)
     plt.show()
     return anim
 

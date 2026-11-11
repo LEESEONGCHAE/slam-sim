@@ -40,18 +40,32 @@ class Lidar:
         self.sigma = sigma
         self.rng = rng or np.random.default_rng()
 
-    def scan(self, world, pose, noisy=True):
-        """반환: ranges (N,), hit (N,) bool. 맞은 것이 없으면 max_range."""
+    def scan(self, world, pose, noisy=True, pose_start=None):
+        """반환: ranges (N,), hit (N,) bool. 맞은 것이 없으면 max_range.
+
+        pose_start를 주면 모션 왜곡을 흉내 낸다: 첫 빔은 pose_start, 마지막 빔은 pose에서 쏜다.
+        (거리는 각 빔을 쏜 위치 기준인데, 로봇은 모두 pose 기준이라고 보고 받는다)
+        """
         x, y, th = pose
-        ang = self.angles + th
+        if pose_start is None:
+            xs = np.full(len(self.angles), x)
+            ys = np.full(len(self.angles), y)
+            ths = np.full(len(self.angles), th)
+        else:
+            f = np.linspace(0.0, 1.0, len(self.angles))
+            x0, y0, th0 = pose_start
+            dth = (th - th0 + np.pi) % (2 * np.pi) - np.pi
+            xs, ys, ths = x0 + f * (x - x0), y0 + f * (y - y0), th0 + f * dth
+        ang = self.angles + ths
         d = np.stack([np.cos(ang), np.sin(ang)], axis=1)        # (N, 2)
         p = world.seg[:, :2]
         e = world.seg[:, 2:] - p                                  # (M, 2)
-        w = p - np.array([x, y])                                  # (M, 2)
+        wx = p[None, :, 0] - xs[:, None]                          # (N, M)
+        wy = p[None, :, 1] - ys[:, None]
         denom = d[:, None, 0] * e[None, :, 1] - d[:, None, 1] * e[None, :, 0]
         with np.errstate(divide="ignore", invalid="ignore"):
-            t = (w[None, :, 0] * e[None, :, 1] - w[None, :, 1] * e[None, :, 0]) / denom
-            u = (w[None, :, 0] * d[:, None, 1] - w[None, :, 1] * d[:, None, 0]) / denom
+            t = (wx * e[None, :, 1] - wy * e[None, :, 0]) / denom
+            u = (wx * d[:, None, 1] - wy * d[:, None, 0]) / denom
         ok = (np.abs(denom) > 1e-12) & (t > 0) & (u >= 0) & (u <= 1)
         t = np.where(ok, t, np.inf).min(axis=1)
         hit = t < self.max_range

@@ -70,8 +70,8 @@ class Sim:
 
     def step(self, steer_cmd, accel_cmd, duration, auto=False):
         n = max(1, int(round(duration / self.DT)))
-        for _ in range(n):
-            if auto:
+        for k in range(n):
+            if auto and k % 10 == 0:      # 자동 주행 제어는 50 Hz
                 steer_cmd, accel_cmd = self.autopilot.control(self.vehicle)
             self.vehicle.step(steer_cmd, accel_cmd, self.DT)
             v, w = self.odom.measure(self.vehicle)
