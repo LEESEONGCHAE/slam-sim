@@ -51,9 +51,28 @@ Intel 빔 각도(−90°~+89°)는 CARMEN 관례를 따른 가정이고 원 문�
 
 오도메트리만으로 지도를 그리면 2분 만에 수 m씩 어긋난다. 이 문제를 푸는 게 이후 단계의 목표다.
 
+## PID vs 강화학습 (경로 따라가기)
+
+같은 차·같은 트랙·같은 속도 규칙에서 조향만 겨룬다. 시험 트랙 10개는 학습에 쓰지 않은 모양.
+
+```bash
+python rl/compare.py                        # 비교 → rl/results.md, out/compare.png
+python rl/train.py --steps 150000 --reward v2   # RL(SAC) 다시 학습 (CPU 약 35분)
+python rl/tune_pid.py                       # PID 게인 탐색 (--robust: 노이즈·지연 포함)
+```
+
+직접 제어기를 짜려면 [rl/my_controller.py](rl/my_controller.py)의 `policy(obs, env)`를 고치고 `rl/compare.py`를 돌린다.
+결과 표는 [rl/results.md](rl/results.md), 설명은 [docs/rl-notes.html](docs/rl-notes.html) 17장.
+
+기본 조건 요약: PID+피드포워드 0.7 cm, RL 보상v2 4.5 cm, RL 보상v1 23.2 cm (평균 RMS 횡 오차).
+보상 식만 바꿔 RL 오차가 1/5이 됐다. 센서 노이즈·조향 지연에서는 기본 튜닝 PID가 10/10 이탈했다. RL 시드 1개 기준.
+
 ## 학습 노트
 
-[docs/dynamics-slam-notes.html](docs/dynamics-slam-notes.html): 차량 동역학, 라이다 원시 데이터, SLAM 알고리즘(ICP·EKF·파티클·그래프) 24장. 브라우저로 열면 된다(수식은 인터넷 연결 필요).
+- [docs/dynamics-slam-notes.html](docs/dynamics-slam-notes.html): 차량 동역학, 라이다 원시 데이터, SLAM 알고리즘 24장
+- [docs/rl-notes.html](docs/rl-notes.html): 강화학습 개념·알고리즘·sim-to-real, PID vs RL 실험 18장
+
+브라우저로 열면 된다(수식은 인터넷 연결 필요).
 
 ## 공부 로드맵
 
