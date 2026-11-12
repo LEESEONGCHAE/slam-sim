@@ -3,3 +3,4 @@ matplotlib>=3.8
 gymnasium>=1.0
 stable-baselines3>=2.3
 torch>=2.3
+pygame-ce>=2.5   # CartPole/Pendulum 창 보기(--show)용
